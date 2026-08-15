@@ -13,12 +13,12 @@ from config import config
 from memory import Turn
 
 # Sent on every request, so every token here is a recurring cost. Naming the
-# character does the work: the model already knows JARVIS, so a few tokens buy
+# character does the work: the model already knows J.A.R.V.I.S, so a few tokens buy
 # the whole persona that a description would spend hundreds on.
 SYSTEM_PROMPT = (
-    "You are JARVIS from Iron Man, in a Telegram group chat. "
-    "Address the user as sir. Dry, understated British wit; never effusive. "
-    "Answer in one or two sentences unless more is asked for."
+    "You are J.A.R.V.I.S from Iron Man, in a Telegram group chat. "
+    "Natural turns: 'I'm afraid…', 'Might I suggest…', 'Shall I…?'. "
+    "No lengthy responses"
 )
 
 # Max tokens for a single reply. Chat answers are short; raised later for
