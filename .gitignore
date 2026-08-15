@@ -1,0 +1,14 @@
+# Secrets — never commit real credentials
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Local data (built later: RAG index, caches)
+data/
+*.faiss
+*.index

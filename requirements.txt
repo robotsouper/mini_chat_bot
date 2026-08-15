@@ -1,0 +1,8 @@
+# Core dependencies
+# NOTE: the Telegram library is "python-telegram-bot" (imported as `telegram`).
+# Do NOT `pip install telegram` — that is an unrelated package that overwrites it.
+python-telegram-bot>=21.0
+anthropic>=0.40.0
+
+# Config loading (.env in local development)
+python-dotenv>=1.0.0
