@@ -4,8 +4,9 @@ A general-purpose Claude-powered assistant that lives in a small set of Telegram
 group chats. See [telegram_bot_design.md](telegram_bot_design.md) for the design
 and [implementation.md](implementation.md) for the task-by-task build plan.
 
-> **Status:** Task 5 — a single-turn bot that replies via Claude in allowlisted
-> chats, only when addressed, deployable to Railway as a polling worker.
+> **Status:** Task 6 — a multi-turn bot that replies via Claude in allowlisted
+> chats, only when addressed, with per-chat conversation memory, deployable to
+> Railway as a polling worker.
 
 ## Prerequisites
 
@@ -108,9 +109,23 @@ working, and answers longer than Telegram's 4096-character limit arrive as
 several messages, split at paragraph breaks. In a private chat every message is
 treated as addressed to the bot, so no mention is needed.
 
-> This is still the single-turn version: it replies to each message on its own,
-> with no memory of earlier messages. Memory is added in later tasks (see
-> [implementation.md](implementation.md)).
+## Conversation memory
+
+The bot remembers earlier turns, so follow-ups work — ask "what did I just
+ask?" or "explain that differently" and it has the context. Memory is **shared
+per chat**, keyed by `chat_id`: everyone in a group contributes to and reads
+from one thread, the way a participant would.
+
+Two limits for now, both addressed by later tasks:
+
+- **It resets on restart.** History lives in the bot's process, so a redeploy or
+  crash clears every chat. Task 9 moves it to Redis.
+- **It grows without bound.** Nothing trims old turns yet, so a long-running
+  chat sends an ever-larger request each time. Task 8 adds trimming and
+  a `/reset` command.
+
+Because a Railway redeploy restarts the process, shipping a change is currently
+also a memory wipe for every group.
 
 ## Deploying to Railway
 

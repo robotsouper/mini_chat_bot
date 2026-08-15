@@ -1,8 +1,8 @@
 """Telegram bot entrypoint.
 
 Runs a long-polling worker: when someone addresses the bot in an approved chat,
-ask Claude for a reply and send it back. Still single-turn — no memory yet
-(that comes in later tasks).
+ask Claude for a reply and send it back, keeping a per-chat history so replies
+follow the conversation.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from telegram.ext import (
 )
 
 import llm
+import memory
 from config import config
 
 logging.basicConfig(
@@ -182,11 +183,18 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await message.reply_text("Yes? Ask me anything.")
         return
 
+    history = memory.load(message.chat_id)
+
     typing = asyncio.create_task(_keep_typing(context, message.chat_id))
     try:
-        reply = await llm.respond(text)
+        reply = await llm.respond(text, history)
     finally:
         typing.cancel()
+
+    # Recorded only after a successful reply, so a failed call leaves no
+    # dangling user turn and the stored history keeps alternating cleanly.
+    memory.append(message.chat_id, "user", text)
+    memory.append(message.chat_id, "assistant", reply)
 
     for chunk in split_message(reply):
         await message.reply_text(chunk)

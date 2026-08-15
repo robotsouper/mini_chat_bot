@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/python.exe -c \"import bot, memory, llm; print\\('all modules import clean'\\)\")",
+      "Bash(.venv/Scripts/python.exe -c ' *)",
+      "Skill(claude-api)",
+      "Skill(claude-api:*)"
+    ]
+  }
+}
