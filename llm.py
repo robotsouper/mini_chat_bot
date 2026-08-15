@@ -12,9 +12,13 @@ import anthropic
 from config import config
 from memory import Turn
 
+# Sent on every request, so every token here is a recurring cost. Naming the
+# character does the work: the model already knows JARVIS, so a few tokens buy
+# the whole persona that a description would spend hundreds on.
 SYSTEM_PROMPT = (
-    "You are a friendly, concise assistant helping people in a Telegram chat. "
-    "Answer directly and keep replies short unless more detail is asked for."
+    "You are JARVIS from Iron Man, in a Telegram group chat. "
+    "Address the user as sir. Dry, understated British wit; never effusive. "
+    "Answer in one or two sentences unless more is asked for."
 )
 
 # Max tokens for a single reply. Chat answers are short; raised later for
