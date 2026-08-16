@@ -16,6 +16,11 @@ from __future__ import annotations
 # keys, so `llm` renders these into `role`/`content` pairs before sending.
 Turn = dict[str, str]
 
+# Turns kept per chat. Every request resends the whole history, so an untrimmed
+# chat costs more on each message than the one before it. Two turns make one
+# exchange, so this is roughly 20 back-and-forths.
+MAX_TURNS = 40
+
 _store: dict[int, list[Turn]] = {}
 
 
@@ -37,4 +42,21 @@ def append(chat_id: int, role: str, content: str, sender: str | None = None) -> 
     turn = {"role": role, "content": content}
     if sender:
         turn["sender"] = sender
-    _store.setdefault(chat_id, []).append(turn)
+
+    turns = _store.setdefault(chat_id, [])
+    turns.append(turn)
+
+    if len(turns) > MAX_TURNS:
+        del turns[: len(turns) - MAX_TURNS]
+        # The API requires the first message to come from the user, so drop an
+        # assistant turn left stranded at the front by the cut.
+        if turns[0]["role"] != "user":
+            del turns[0]
+
+
+def reset(chat_id: int) -> int:
+    """Forget a chat's history, returning how many turns were dropped.
+
+    Other chats are untouched — the store is keyed per `chat_id`.
+    """
+    return len(_store.pop(chat_id, []))

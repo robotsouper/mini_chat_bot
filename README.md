@@ -4,9 +4,9 @@ A general-purpose Claude-powered assistant that lives in a small set of Telegram
 group chats. See [telegram_bot_design.md](telegram_bot_design.md) for the design
 and [implementation.md](implementation.md) for the task-by-task build plan.
 
-> **Status:** Task 7 — a multi-turn bot that replies via Claude in allowlisted
-> chats, only when addressed, with per-chat conversation memory that tracks who
-> said what, deployable to Railway as a polling worker.
+> **Status:** Task 8 — a multi-turn bot that replies via Claude in allowlisted
+> chats, only when addressed, with trimmed per-chat memory that tracks who said
+> what and a `/reset` command, deployable to Railway as a polling worker.
 
 ## Prerequisites
 
@@ -122,13 +122,18 @@ the request is assembled, so the bot can answer "who asked about X?" and address
 people individually. Names are collapsed to one line and truncated before being
 rendered, so a display name containing newlines can't forge extra turns.
 
-Two limits for now, both addressed by later tasks:
+**`/reset` clears the current chat's history** and nothing else — other chats
+keep theirs. In a group with privacy mode on, send it as `/reset@yourbotname`,
+since Telegram only delivers commands addressed to the bot.
 
-- **It resets on restart.** History lives in the bot's process, so a redeploy or
-  crash clears every chat. Task 9 moves it to Redis.
-- **It grows without bound.** Nothing trims old turns yet, so a long-running
-  chat sends an ever-larger request each time. Task 8 adds trimming and
-  a `/reset` command.
+History is **capped at the last 40 turns** (~20 exchanges) per chat. Every
+request resends the whole history, so without a cap each message in a long chat
+would cost more than the one before it. Older turns fall off as new ones
+arrive; raise or lower `MAX_TURNS` in [memory.py](memory.py) to trade context
+depth against cost.
+
+One limit remains: **memory resets on restart.** History lives in the bot's
+process, so a redeploy or crash clears every chat. Task 9 moves it to Redis.
 
 Because a Railway redeploy restarts the process, shipping a change is currently
 also a memory wipe for every group.

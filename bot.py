@@ -176,6 +176,28 @@ async def whereami(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Clear this chat's conversation history.
+
+    Gated by the allowlist, unlike `/whereami` — this one acts on stored data
+    rather than helping you discover a chat in the first place.
+    """
+    chat = update.effective_chat
+    message = update.effective_message
+    if chat is None or message is None:
+        return
+
+    if not is_allowed(chat.id):
+        logger.info("Ignoring /reset from non-allowlisted chat_id=%s", chat.id)
+        return
+
+    dropped = memory.reset(chat.id)
+    logger.info("/reset cleared %d turns in chat_id=%s", dropped, chat.id)
+    await message.reply_text(
+        "Conversation history cleared." if dropped else "Nothing to forget."
+    )
+
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Reply to a message addressed to the bot with an LLM-generated response."""
     message = update.message
@@ -220,6 +242,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 def main() -> None:
     app = ApplicationBuilder().token(config.telegram_token).build()
     app.add_handler(CommandHandler("whereami", whereami))
+    app.add_handler(CommandHandler("reset", reset))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     if config.allowed_chat_ids:
