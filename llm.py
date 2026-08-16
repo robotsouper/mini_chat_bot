@@ -28,13 +28,32 @@ MAX_TOKENS = 1024
 _client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
 
 
-async def respond(text: str, history: list[Turn] | None = None) -> str:
+def _to_api_turn(turn: Turn) -> dict[str, str]:
+    """Render a stored turn into the `role`/`content` pair the API accepts.
+
+    A user turn's sender is folded into the text as `Name: message`, since the
+    API has nowhere else to put it — extra keys are rejected.
+    """
+    sender = turn.get("sender")
+    content = f"{sender}: {turn['content']}" if sender else turn["content"]
+    return {"role": turn["role"], "content": content}
+
+
+async def respond(
+    text: str,
+    history: list[Turn] | None = None,
+    sender: str | None = None,
+) -> str:
     """Send `text` to Claude and return the reply as a plain string.
 
     `history` is the chat's earlier turns, oldest first; it is sent ahead of the
     new message so the model can answer follow-ups that depend on context.
+    `sender` names whoever wrote `text`, so the model can tell speakers apart.
     """
-    messages = [*(history or []), {"role": "user", "content": text}]
+    messages = [
+        *(_to_api_turn(turn) for turn in history or []),
+        _to_api_turn({"role": "user", "content": text, "sender": sender or ""}),
+    ]
 
     message = await _client.messages.create(
         model=config.model,

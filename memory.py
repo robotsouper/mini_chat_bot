@@ -11,7 +11,9 @@ for now. Task 9 swaps in Redis behind this same `load`/`append` interface.
 
 from __future__ import annotations
 
-# One stored turn, in the shape the Anthropic API expects.
+# One stored turn: `role` and `content`, plus `sender` on user turns naming who
+# spoke. Note this is NOT the API's message shape — the API rejects unknown
+# keys, so `llm` renders these into `role`/`content` pairs before sending.
 Turn = dict[str, str]
 
 _store: dict[int, list[Turn]] = {}
@@ -25,10 +27,14 @@ def load(chat_id: int) -> list[Turn]:
     return list(_store.get(chat_id, []))
 
 
-def append(chat_id: int, role: str, content: str) -> None:
+def append(chat_id: int, role: str, content: str, sender: str | None = None) -> None:
     """Record one turn against a chat.
 
-    Turns are appended strictly in user/assistant pairs (see `bot.handle_text`),
-    which keeps the stored history in the alternating order the API expects.
+    `sender` names who wrote a user turn, so the model can tell a group's
+    speakers apart. Turns are appended strictly in user/assistant pairs (see
+    `bot.handle_text`), keeping the stored history in the order the API expects.
     """
-    _store.setdefault(chat_id, []).append({"role": role, "content": content})
+    turn = {"role": role, "content": content}
+    if sender:
+        turn["sender"] = sender
+    _store.setdefault(chat_id, []).append(turn)

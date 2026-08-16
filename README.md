@@ -4,9 +4,9 @@ A general-purpose Claude-powered assistant that lives in a small set of Telegram
 group chats. See [telegram_bot_design.md](telegram_bot_design.md) for the design
 and [implementation.md](implementation.md) for the task-by-task build plan.
 
-> **Status:** Task 6 — a multi-turn bot that replies via Claude in allowlisted
-> chats, only when addressed, with per-chat conversation memory, deployable to
-> Railway as a polling worker.
+> **Status:** Task 7 — a multi-turn bot that replies via Claude in allowlisted
+> chats, only when addressed, with per-chat conversation memory that tracks who
+> said what, deployable to Railway as a polling worker.
 
 ## Prerequisites
 
@@ -115,6 +115,12 @@ The bot remembers earlier turns, so follow-ups work — ask "what did I just
 ask?" or "explain that differently" and it has the context. Memory is **shared
 per chat**, keyed by `chat_id`: everyone in a group contributes to and reads
 from one thread, the way a participant would.
+
+Each stored user turn also records **who said it**, taken from the sender's
+Telegram display name. The name is folded into the message as `Name: text` when
+the request is assembled, so the bot can answer "who asked about X?" and address
+people individually. Names are collapsed to one line and truncated before being
+rendered, so a display name containing newlines can't forge extra turns.
 
 Two limits for now, both addressed by later tasks:
 

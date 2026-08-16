@@ -11,7 +11,7 @@ import asyncio
 import logging
 import re
 
-from telegram import Message, MessageEntity, Update
+from telegram import Message, MessageEntity, Update, User
 from telegram.constants import ChatAction, ChatType, MessageLimit
 from telegram.ext import (
     ApplicationBuilder,
@@ -36,6 +36,9 @@ MAX_MESSAGE_CHARS = int(MessageLimit.MAX_TEXT_LENGTH)
 
 # A typing action expires after ~5s, so it is re-sent while we wait on Claude.
 TYPING_REFRESH_SECONDS = 4.0
+
+# Display names are rendered into the prompt, so cap their length.
+MAX_SENDER_CHARS = 64
 
 # Preferred split points for a long reply, coarsest first.
 _SPLIT_SEPARATORS = ("\n\n", "\n", " ")
@@ -74,6 +77,19 @@ def is_addressed_to_bot(message: Message, bot_id: int, bot_username: str) -> boo
         if mentioned.lower() == handle:
             return True
     return False
+
+
+def sender_label(user: User | None) -> str:
+    """A short display name for whoever sent a message.
+
+    Prefers the display name, falls back to the @username. Collapsed to one
+    line and truncated: this string is rendered into the prompt, so a name
+    carrying newlines could otherwise forge extra conversation turns.
+    """
+    if user is None:
+        return "Unknown"
+    name = user.full_name or (f"@{user.username}" if user.username else "") or "Unknown"
+    return re.sub(r"\s+", " ", name).strip()[:MAX_SENDER_CHARS]
 
 
 def strip_mention(text: str, bot_username: str) -> str:
@@ -183,17 +199,18 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await message.reply_text("Yes? Ask me anything.")
         return
 
+    sender = sender_label(message.from_user)
     history = memory.load(message.chat_id)
 
     typing = asyncio.create_task(_keep_typing(context, message.chat_id))
     try:
-        reply = await llm.respond(text, history)
+        reply = await llm.respond(text, history, sender)
     finally:
         typing.cancel()
 
     # Recorded only after a successful reply, so a failed call leaves no
     # dangling user turn and the stored history keeps alternating cleanly.
-    memory.append(message.chat_id, "user", text)
+    memory.append(message.chat_id, "user", text, sender)
     memory.append(message.chat_id, "assistant", reply)
 
     for chunk in split_message(reply):
