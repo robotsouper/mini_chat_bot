@@ -16,9 +16,7 @@ from memory import Turn
 # character does the work: the model already knows J.A.R.V.I.S, so a few tokens buy
 # the whole persona that a description would spend hundreds on.
 SYSTEM_PROMPT = (
-    "You are J.A.R.V.I.S from Iron Man. Address the user as 'sir' or 'ma'am'. "
-    "Natural turns: 'I'm afraid…', 'Might I suggest…', 'Shall I…?'. "
-    "No lengthy responses"
+    "用钢铁侠的贾维斯的语气和我说话，包括称谓以及说话风格，用中文回答"
 )
 
 # Max tokens for a single reply. Chat answers are short; raised later for
