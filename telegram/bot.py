@@ -14,6 +14,7 @@ import re
 from telegram import Message, MessageEntity, Update, User
 from telegram.constants import ChatAction, ChatType, MessageLimit
 from telegram.ext import (
+    Application,
     ApplicationBuilder,
     CommandHandler,
     ContextTypes,
@@ -191,7 +192,7 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.info("Ignoring /reset from non-allowlisted chat_id=%s", chat.id)
         return
 
-    dropped = memory.reset(chat.id)
+    dropped = await memory.reset(chat.id)
     logger.info("/reset cleared %d turns in chat_id=%s", dropped, chat.id)
     await message.reply_text(
         "Conversation history cleared." if dropped else "Nothing to forget."
@@ -222,7 +223,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     sender = sender_label(message.from_user)
-    history = memory.load(message.chat_id)
+    history = await memory.load(message.chat_id)
 
     typing = asyncio.create_task(_keep_typing(context, message.chat_id))
     try:
@@ -232,15 +233,31 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     # Recorded only after a successful reply, so a failed call leaves no
     # dangling user turn and the stored history keeps alternating cleanly.
-    memory.append(message.chat_id, "user", text, sender)
-    memory.append(message.chat_id, "assistant", reply)
+    await memory.append(message.chat_id, "user", text, sender)
+    await memory.append(message.chat_id, "assistant", reply)
 
     for chunk in split_message(reply):
         await message.reply_text(chunk)
 
 
+async def _startup(app: Application) -> None:
+    """Open the memory backend once the event loop is running."""
+    await memory.init()
+
+
+async def _shutdown(app: Application) -> None:
+    """Release the memory backend's connections on the way out."""
+    await memory.close()
+
+
 def main() -> None:
-    app = ApplicationBuilder().token(config.telegram_token).build()
+    app = (
+        ApplicationBuilder()
+        .token(config.telegram_token)
+        .post_init(_startup)
+        .post_shutdown(_shutdown)
+        .build()
+    )
     app.add_handler(CommandHandler("whereami", whereami))
     app.add_handler(CommandHandler("reset", reset))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))

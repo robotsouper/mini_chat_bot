@@ -157,19 +157,42 @@ sane token budget.
 
 **Done when:** `/reset` clears the group's memory; a very long conversation drops oldest turns instead of growing unbounded.
 
-### Task 9 — Durable memory (Redis)
+### Task 9 — Durable memory (Postgres)
 
-**Doing:** Replace the in-memory store with Redis so a restart/redeploy doesn't
-wipe context. Same interface, swapped backend.
+**Doing:** Replace the in-memory store with Postgres so a restart/redeploy
+doesn't wipe context. Same `load`/`append`/`reset` interface, swapped backend.
+
+**Why Postgres over Redis:** Redis is the closer fit for *today's* data — a
+capped FIFO list is literally its list type, and `EXPIRE` would hand us Task 17's
+retention for free. We take Postgres anyway, to run **one** database rather than
+two: it is the substrate Task 13's vector store (pgvector) and any later usage
+reporting need, and Postgres can serve the hot path at this traffic while Redis
+could never serve those. The costs of that choice are real and paid here: an
+explicit schema, a driver, and hand-written trimming.
+
+**Design notes:**
+- **Async driver.** `asyncpg` with a small pool — the handlers are already
+  `async`, so `memory`'s functions become coroutines and every call site awaits.
+- **Ordering by `id`.** A single worker inserts one row at a time, so a higher
+  `BIGSERIAL` is always a later turn. No timestamp comparison needed.
+- **Trim on write,** scoped to the one `chat_id` being appended to, so a busy
+  group never evicts a quiet one.
+- **Guard `messages[0]` on read.** Trimming to an arbitrary count can leave an
+  *assistant* turn oldest, which the API rejects. Dropping it at read time — not
+  write time — means any truncated history loads safely, however it got that way.
+- **Degrade, don't crash.** With no `DATABASE_URL`, fall back to the in-process
+  store and warn at startup, so local development needs no database.
 
 **Files:**
-- `requirements.txt` *(changed)* — add `redis`.
-- `.env.example` *(changed)* — document `REDIS_URL`.
-- `config.py` *(changed)* — load `REDIS_URL`.
-- `memory.py` *(changed)* — back the store with Redis (per-`chat_id` key, TTL-based expiry); keep the same `load/append/reset` API.
-- `README.md` *(changed)* — add the Railway Redis plugin step.
+- `requirements.txt` *(changed)* — add `asyncpg`.
+- `.env.example` *(changed)* — document `DATABASE_URL`.
+- `config.py` *(changed)* — load `DATABASE_URL` (optional).
+- `memory.py` *(changed)* — `init()`/`close()` for the pool, `CREATE TABLE IF NOT EXISTS` on startup, and a Postgres-backed `load`/`append`/`reset`.
+- `bot.py` *(changed)* — `post_init`/`post_shutdown` hooks to open and close the pool; await the now-async memory calls.
+- `README.md` *(changed)* — add the Railway Postgres step (reference the variable, don't paste it).
 
-**Done when:** Memory survives a bot restart; adding the Redis plugin on Railway and setting `REDIS_URL` works in production.
+**Done when:** Memory survives a bot restart, and a redeploy on Railway no longer
+resets every group's context.
 
 ---
 
@@ -223,7 +246,7 @@ index. (Embeddings need a separate provider — Voyage AI — since Claude has n
 embeddings endpoint.)
 
 **Files:**
-- `requirements.txt` *(changed)* — add the embeddings client (`voyageai`) and a vector store (`faiss-cpu` or `chromadb`).
+- `requirements.txt` *(changed)* — add the embeddings client (`voyageai`) and a vector store. Prefer **pgvector** in the Postgres instance Task 9 already provisioned, rather than adding `faiss-cpu`/`chromadb` alongside it — one datastore, and the index survives redeploys like the memory does.
 - `.env.example` *(changed)* — document `VOYAGE_API_KEY`.
 - `config.py` *(changed)* — load the embeddings key and index path.
 - `knowledge/__init__.py` *(new)*.
@@ -272,7 +295,7 @@ embeddings endpoint.)
 **Doing:** Expire old memory per policy and make failures user-friendly.
 
 **Files:**
-- `memory.py` *(changed)* — enforce a retention TTL (align with the design's policy).
+- `memory.py` *(changed)* — enforce a retention TTL. Postgres has no expiry of its own (this is what Redis would have given us for free in Task 9), so add a periodic `DELETE FROM turns WHERE created_at < now() - $ttl` — the column is already there for it.
 - `bot.py` *(changed)* — wrap the model call so unrecoverable errors send a friendly fallback message instead of failing silently; rely on the SDK's built-in retry for 429/5xx.
 - `README.md` *(changed)* — document the retention policy and env knobs.
 
@@ -291,7 +314,7 @@ embeddings endpoint.)
 6.  feat: in-memory per-group conversation history
 7.  feat: attribute stored turns to their sender
 8.  feat: /reset command and history trimming
-9.  feat: back memory with Redis for durability
+9.  feat: back memory with Postgres for durability
 10. feat: tool-calling loop with a custom function tool
 11. feat: enable web search and code execution server tools
 12. feat: MCP connector support

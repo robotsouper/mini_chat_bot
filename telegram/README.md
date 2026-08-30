@@ -4,9 +4,10 @@ A general-purpose Claude-powered assistant that lives in a small set of Telegram
 group chats. See [telegram_bot_design.md](telegram_bot_design.md) for the design
 and [implementation.md](implementation.md) for the task-by-task build plan.
 
-> **Status:** Task 8 — a multi-turn bot that replies via Claude in allowlisted
+> **Status:** Task 9 — a multi-turn bot that replies via Claude in allowlisted
 > chats, only when addressed, with trimmed per-chat memory that tracks who said
-> what and a `/reset` command, deployable to Railway as a polling worker.
+> what, survives restarts in Postgres, and a `/reset` command. Deployable to
+> Railway as a polling worker.
 
 ## Prerequisites
 
@@ -55,6 +56,7 @@ naming the variable.
 | `ANTHROPIC_API_KEY` | yes | — | Anthropic API key |
 | `MODEL` | no | `claude-sonnet-4-6` | Claude model to use |
 | `ALLOWED_CHAT_IDS` | no | *(empty)* | Comma-separated chat IDs the bot may operate in. Empty means it ignores every message. |
+| `DATABASE_URL` | no | *(empty)* | Postgres connection string for durable memory. Empty means memory lives in the process and is lost on restart. |
 
 ## Running the bot
 
@@ -132,11 +134,32 @@ would cost more than the one before it. Older turns fall off as new ones
 arrive; raise or lower `MAX_TURNS` in [memory.py](memory.py) to trade context
 depth against cost.
 
-One limit remains: **memory resets on restart.** History lives in the bot's
-process, so a redeploy or crash clears every chat. Task 9 moves it to Redis.
+### Where memory is stored
 
-Because a Railway redeploy restarts the process, shipping a change is currently
-also a memory wipe for every group.
+With `DATABASE_URL` set, history lives in Postgres and **survives restarts,
+redeploys, and crashes** — shipping a code change no longer wipes every group's
+context. The bot creates its own table on startup; there is no migration step
+and nothing to run by hand:
+
+```sql
+turns(id, chat_id, role, content, sender, created_at)
+```
+
+Trimming happens on write, scoped to the one `chat_id` being appended to, so a
+busy group never evicts a quiet one.
+
+**Without `DATABASE_URL` the bot still runs**, falling back to an in-process
+store and logging a warning at startup. That keeps local development free of a
+database dependency, at the cost of forgetting everything on exit. If you see
+
+```
+DATABASE_URL is not set — conversation memory is in-process and will be lost on restart.
+```
+
+in the Railway logs, the service is not linked to the database — see below.
+
+Rows are kept indefinitely for chats that stay under the cap; `created_at`
+exists for the retention policy in Task 17.
 
 ## Deploying to Railway
 
@@ -165,10 +188,21 @@ which `load_dotenv()` in [config.py](config.py) quietly no-ops around.
    `ANTHROPIC_API_KEY`, `ALLOWED_CHAT_IDS`, and optionally `MODEL`. Same values
    as your local `.env` (`ALLOWED_CHAT_IDS` takes no quotes and no spaces).
    Saving triggers a redeploy.
-4. **Check the logs.** Service → *Deployments* → the active deploy should show
-   `Allowlisted chats: [...]` followed by `Bot is running (polling)`.
-5. **Stop your local bot**, then message it from Telegram. A reply means Railway
+4. **Add Postgres.** In the project canvas: *New* → *Database* → *Add
+   PostgreSQL*. Then, in the **bot** service's *Variables*, add `DATABASE_URL`
+   as a **reference**, not a pasted string: *New Variable* → *Add Reference* →
+   pick the Postgres service's `DATABASE_URL`. It stores as
+   `${{Postgres.DATABASE_URL}}` and resolves at deploy time, so it stays correct
+   if the database's credentials ever rotate — and there is nothing to mistype.
+   Traffic goes over Railway's private network, so it costs no egress.
+5. **Check the logs.** Service → *Deployments* → the active deploy should show
+   `Allowlisted chats: [...]`, then `Conversation memory is backed by Postgres`,
+   then `Bot is running (polling)`. If the middle line is the `DATABASE_URL is
+   not set` warning instead, step 4 did not take.
+6. **Stop your local bot**, then message it from Telegram. A reply means Railway
    is serving it. Close your laptop and try again to confirm.
+7. **Verify durability.** Say something memorable, redeploy the service, then
+   ask the bot to recall it. Before Task 9 this was guaranteed to fail.
 
 ### Keeping it running
 
@@ -189,7 +223,10 @@ automatically.
 
 - Railway's Hobby plan is ~$5/month of included usage. A polling worker is tiny
   but runs 24/7, so it draws continuously even while idle.
+- The Postgres service is a **second always-on resource** billed the same
+  usage-based way. Storage is negligible here — 40 short rows per chat — so this
+  is essentially the cost of keeping a small database running, not of the data
+  in it.
 - Anthropic API usage is billed separately, per token, and will likely be the
-  larger line item once the bot is in daily use.
-- No volume or database is needed yet. Conversation memory is still in-process,
-  so **every redeploy or restart wipes it** — Task 9 fixes that with Redis.
+  larger line item once the bot is in daily use. History is resent on every
+  request, which is why `MAX_TURNS` caps it.

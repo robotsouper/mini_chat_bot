@@ -6,3 +6,6 @@ anthropic>=0.40.0
 
 # Config loading (.env in local development)
 python-dotenv>=1.0.0
+
+# Postgres driver for durable conversation memory (async, no ORM)
+asyncpg>=0.29.0

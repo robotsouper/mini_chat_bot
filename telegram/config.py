@@ -59,6 +59,7 @@ class Config:
     anthropic_api_key: str
     model: str
     allowed_chat_ids: frozenset[int]
+    database_url: str | None
 
 
 def load_config() -> Config:
@@ -68,6 +69,9 @@ def load_config() -> Config:
         anthropic_api_key=_require("ANTHROPIC_API_KEY"),
         model=os.getenv("MODEL", "claude-sonnet-4-6"),
         allowed_chat_ids=_parse_chat_ids("ALLOWED_CHAT_IDS"),
+        # Optional: without it, memory falls back to an in-process store that
+        # is wiped on restart (see memory.init).
+        database_url=os.getenv("DATABASE_URL") or None,
     )
 
 
